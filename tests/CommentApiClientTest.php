@@ -5,13 +5,8 @@ namespace Corey\PhpCommentApiClient\Tests;
 use Corey\PhpCommentApiClient\CommentApiClient;
 use Corey\PhpCommentApiClient\Dtos\Requests\CreateCommentRequestDto;
 use Corey\PhpCommentApiClient\Dtos\Requests\UpdateCommentByIdRequestDto;
-use Corey\PhpCommentApiClient\Exceptions\CommentApiClientBadRequestException;
-use Corey\PhpCommentApiClient\Exceptions\CommentApiClientForbiddenException;
+use Corey\PhpCommentApiClient\Exceptions\CommentApiClientHTTPException;
 use Corey\PhpCommentApiClient\Exceptions\CommentApiClientMalformedResponsePayloadException;
-use Corey\PhpCommentApiClient\Exceptions\CommentApiClientMethodNotAllowedException;
-use Corey\PhpCommentApiClient\Exceptions\CommentApiClientServerErrorException;
-use Corey\PhpCommentApiClient\Exceptions\CommentApiClientTooManyRequestsException;
-use Corey\PhpCommentApiClient\Exceptions\CommentApiClientUnhandledHttpResponseCodeException;
 use Nyholm\Psr7\Factory\Psr17Factory;
 use Nyholm\Psr7\Response;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -115,7 +110,7 @@ class CommentApiClientTest extends TestCase
     }
 
     #[DataProvider('provideHttpErrorCases')]
-    public function testHttpErrorsThrowSpecificExceptions(int $statusCode, string $expectedExceptionClass): void
+    public function testHttpErrorsThrowSpecificExceptions(int $statusCode): void
     {
         $mockResponse = new Response($statusCode, ['Content-Type' => 'application/json'], '{}');
 
@@ -124,26 +119,29 @@ class CommentApiClientTest extends TestCase
             ->willReturn($mockResponse)
         ;
 
-        $this->expectException($expectedExceptionClass);
-
-        $this->apiClient->getComments();
+        try {
+            $this->apiClient->getComments();
+            $this->fail('An exception should have been thrown.');
+        } catch (CommentApiClientHTTPException $exception) {
+            $this->assertEquals($statusCode, $exception->getHttpStatusCode());
+        }
     }
 
     public static function provideHttpErrorCases(): \Generator
     {
-        yield '400 Bad Request' => [400, CommentApiClientBadRequestException::class];
+        yield '400 Bad Request' => [400];
 
-        yield '403 Forbidden' => [403, CommentApiClientForbiddenException::class];
+        yield '403 Forbidden' => [403];
 
-        yield '405 Method Not Allowed' => [405, CommentApiClientMethodNotAllowedException::class];
+        yield '405 Method Not Allowed' => [405];
 
-        yield '429 Too Many Requests' => [429, CommentApiClientTooManyRequestsException::class];
+        yield '429 Too Many Requests' => [429];
 
-        yield '500 Server Error' => [500, CommentApiClientServerErrorException::class];
+        yield '500 Server Error' => [500];
 
-        yield '503 Service Unavailable' => [503, CommentApiClientServerErrorException::class];
+        yield '503 Service Unavailable' => [503];
 
-        yield '418 Response Code' => [418, CommentApiClientUnhandledHttpResponseCodeException::class];
+        yield '418 Response Code' => [418];
     }
 
     public function testMalformedJsonResponseThrowsException(): void

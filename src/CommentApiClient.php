@@ -11,15 +11,9 @@ use Corey\PhpCommentApiClient\Dtos\Responses\CreateCommentResponseDto;
 use Corey\PhpCommentApiClient\Dtos\Responses\GetCommentsResponseDto;
 use Corey\PhpCommentApiClient\Dtos\Responses\UpdateCommentByIdResponseDto;
 use Corey\PhpCommentApiClient\Exceptions\AbstractCommentApiClientException;
-use Corey\PhpCommentApiClient\Exceptions\CommentApiClientBadRequestException;
-use Corey\PhpCommentApiClient\Exceptions\CommentApiClientForbiddenException;
+use Corey\PhpCommentApiClient\Exceptions\CommentApiClientHTTPException;
 use Corey\PhpCommentApiClient\Exceptions\CommentApiClientMalformedRequestPayloadException;
 use Corey\PhpCommentApiClient\Exceptions\CommentApiClientMalformedResponsePayloadException;
-use Corey\PhpCommentApiClient\Exceptions\CommentApiClientMethodNotAllowedException;
-use Corey\PhpCommentApiClient\Exceptions\CommentApiClientNotFoundException;
-use Corey\PhpCommentApiClient\Exceptions\CommentApiClientServerErrorException;
-use Corey\PhpCommentApiClient\Exceptions\CommentApiClientTooManyRequestsException;
-use Corey\PhpCommentApiClient\Exceptions\CommentApiClientUnhandledHttpResponseCodeException;
 use Corey\PhpCommentApiClient\Exceptions\CommentApiClientUnknownException;
 use Http\Discovery\Psr17FactoryDiscovery;
 use Http\Discovery\Psr18ClientDiscovery;
@@ -46,7 +40,7 @@ class CommentApiClient implements CommentApiClientInterface
     /** @throws AbstractCommentApiClientException */
     public function getComments(): GetCommentsResponseDto
     {
-        $uri = new Uri(self::URI)->withPath('/comments');
+        $uri = new Uri(static::URI)->withPath('/comments');
 
         $data = $this->makeRequest(
             'GET',
@@ -55,7 +49,7 @@ class CommentApiClient implements CommentApiClientInterface
 
         $commentDtos = [];
         foreach ($data as $item) {
-            $commentDtos[] = CommentDto::fromArray($item);
+            $commentDtos[] = $this->buildCommentDto($item);
         }
 
         return new GetCommentsResponseDto($commentDtos);
@@ -64,7 +58,7 @@ class CommentApiClient implements CommentApiClientInterface
     /** @throws AbstractCommentApiClientException */
     public function createComment(CreateCommentRequestDto $requestDto): CreateCommentResponseDto
     {
-        $uri = new Uri(self::URI)->withPath('/comment');
+        $uri = new Uri(static::URI)->withPath('/comment');
 
         $payload = [
             'name' => $requestDto->name,
@@ -78,14 +72,14 @@ class CommentApiClient implements CommentApiClientInterface
         );
 
         return new CreateCommentResponseDto(
-            CommentDto::fromArray($data)
+            $this->buildCommentDto($data)
         );
     }
 
     /** @throws AbstractCommentApiClientException */
     public function updateCommentById(UpdateCommentByIdRequestDto $requestDto): UpdateCommentByIdResponseDto
     {
-        $uri = new Uri(self::URI)->withPath('/comment/'.$requestDto->id);
+        $uri = new Uri(static::URI)->withPath('/comment/'.$requestDto->id);
 
         $payload = [
             'name' => $requestDto->name,
@@ -99,7 +93,20 @@ class CommentApiClient implements CommentApiClientInterface
         );
 
         return new UpdateCommentByIdResponseDto(
-            CommentDto::fromArray($data)
+            $this->buildCommentDto($data)
+        );
+    }
+
+    protected function buildCommentDto(array $data): CommentDto
+    {
+        if (!isset($data['id'], $data['name'], $data['text'])) {
+            throw new CommentApiClientMalformedResponsePayloadException();
+        }
+
+        return new CommentDto(
+            id: (int) $data['id'],
+            name: (string) $data['name'],
+            text: (string) $data['text'],
         );
     }
 
@@ -128,26 +135,13 @@ class CommentApiClient implements CommentApiClientInterface
 
             $statusCode = $response->getStatusCode();
             if (200 !== $statusCode && 201 !== $statusCode) {
-                if (400 === $statusCode) {
-                    throw new CommentApiClientBadRequestException('Bad request');
-                }
-                if (403 === $statusCode) {
-                    throw new CommentApiClientForbiddenException('Forbidden');
-                }
-                if (404 === $statusCode) {
-                    throw new CommentApiClientNotFoundException('Not Found');
-                }
-                if (405 === $statusCode) {
-                    throw new CommentApiClientMethodNotAllowedException('Method not allowed');
-                }
-                if (429 === $statusCode) {
-                    throw new CommentApiClientTooManyRequestsException('Too many requests');
-                }
-                if ($statusCode >= 500 && $statusCode < 600) {
-                    throw new CommentApiClientServerErrorException("Server error: {$statusCode}");
-                }
+                $reason = $response->getReasonPhrase();
+                $message = "HTTP Error status code: {$statusCode} {$reason}";
 
-                throw new CommentApiClientUnhandledHttpResponseCodeException("Unhandled http response code: {$statusCode}");
+                throw new CommentApiClientHTTPException(
+                    httpStatusCode: $statusCode,
+                    message: $message
+                );
             }
         } catch (ClientExceptionInterface $exception) {
             throw new CommentApiClientUnknownException($exception->getMessage());
